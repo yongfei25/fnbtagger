@@ -1,13 +1,4 @@
 {
     "python.linting.pep8Enabled": true,
-    // "python.formatting.autopep8Args": [
-    //     "--max-line-length=100",
-    //     "--indent-size=2"
-    // ],
-    "python.linting.pep8Args": [
-        "--indent-string=\"  \""
-    ],
-    "python.linting.pylintArgs": [
-        "--indent-string=\"  \""
-    ]
+    "editor.tabSize": 4
 }

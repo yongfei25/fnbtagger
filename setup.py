@@ -1,6 +1,3 @@
-"""
-Food name tagger
-"""
 from setuptools import setup
 
 setup(name='fnbtagger',
@@ -13,4 +10,3 @@ setup(name='fnbtagger',
       test_suite='nose.collector',
       tests_require=['nose'],
       zip_safe=False)
-      
