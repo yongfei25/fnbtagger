@@ -28,7 +28,7 @@ class GenerateExampleTestCase(TestCase):
     def test_token_indexer(self):
         indexer = TokenIndexer()
         result = indexer.index(self.sentence, extract_tokens)
-        expected = [2, 3, 4, 5, 6, 7, 2, 8, 9, 10]
+        expected = [1, 2, 3, 4, 5, 6, 1, 7, 8, 9]
         self.assertEqual(result, expected)
         self.assertEqual(len(list(indexer.tokens.keys())), 10)
         self.assertEqual(len(list(indexer.ids.keys())), 10)
@@ -36,7 +36,7 @@ class GenerateExampleTestCase(TestCase):
     def test_labels_indexer(self):
         indexer = TokenIndexer(unk='O')
         result = indexer.index(self.sentence, extract_labels)
-        expected = [1, 2, 3, 3, 1, 1, 1, 4, 5, 1]
+        expected = [0, 1, 2, 2, 0, 0, 0, 3, 4, 0]
         self.assertEqual(result, expected)
         self.assertEqual(len(list(indexer.tokens.keys())), 5)
         self.assertEqual(len(list(indexer.ids.keys())), 5)
@@ -47,7 +47,7 @@ class GenerateExampleTestCase(TestCase):
         tokens = extract_tokens(self.sentence2)
         ids = indexer.get_ids(tokens)
         # the 1's are UNK (unknown token)
-        expected = [1, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 10]
+        expected = [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 9]
         self.assertEqual(ids, expected)
 
     def test_dataset_splitter(self):
