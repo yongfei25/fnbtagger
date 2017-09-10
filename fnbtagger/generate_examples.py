@@ -54,6 +54,32 @@ class TokenIndexer:
         return [self.tokens.get(tId, self.tokens[1]) for tId in ids]
 
 
+class DatasetSplitter:
+    def __init__(self, split_a=0.9, split_b=0.1):
+        if split_a + split_b != 1:
+            raise ValueError('The split must sum up to 1')
+        self.split_a = split_a
+        self.split_b = split_b
+        self.allocation = {
+            'set_a': 0,
+            'set_b': 0,
+            'total': 0
+        }
+
+    def allocate(self):
+        total = self.allocation['total'] + 1
+        target = None
+        if total == 0:
+            target = 'set_a'
+        elif self.allocation['set_a'] / total < self.split_a:
+            target = 'set_a'
+        else:
+            target = 'set_b'
+        self.allocation[target] += 1
+        self.allocation['total'] = total
+        return target
+
+
 # TODO: Split train/dev/test datasets
 def main(_):
     data_path = './data/annotations.txt'

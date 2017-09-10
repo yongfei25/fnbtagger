@@ -1,6 +1,7 @@
 from unittest import TestCase
 from fnbtagger.generate_examples import (
-     extract_labels, extract_tokens, TokenIndexer
+    extract_labels, extract_tokens, TokenIndexer,
+    DatasetSplitter
 )
 
 
@@ -48,3 +49,18 @@ class GenerateExampleTestCase(TestCase):
         # the 1's are UNK (unknown token)
         expected = [1, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 10]
         self.assertEqual(ids, expected)
+
+    def test_dataset_splitter(self):
+        splitter = DatasetSplitter(split_a=0.8, split_b=0.2)
+        for _ in range(10):
+            alloc = splitter.allocate()
+            assert(isinstance(alloc, str))
+        self.assertEqual(splitter.allocation['set_a'], 8)
+        self.assertEqual(splitter.allocation['set_b'], 2)
+
+    def test_dataset_splitter_halve(self):
+        splitter = DatasetSplitter(split_a=0.5, split_b=0.5)
+        for _ in range(10):
+            splitter.allocate()
+        self.assertEqual(splitter.allocation['set_a'], 5)
+        self.assertEqual(splitter.allocation['set_b'], 5)
