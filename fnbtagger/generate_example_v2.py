@@ -10,8 +10,17 @@ def extract_tokens(sentence):
 def extract_labels(sentence):
     return [x.split('/').pop().upper() for x in sentence.split(' ')]
 
+# TODO: A function for max-length and padding
+
 
 def make_example(sequence, labels):
+    if len(sequence) != len(labels):
+        raise ValueError(
+            'sequence and labels must have equal length. {} != {}'.format(
+                len(sequence), len(labels)
+            )
+        )
+
     # The object we return
     ex = tf.train.SequenceExample()
     # A non-sequential feature of our example
@@ -22,7 +31,7 @@ def make_example(sequence, labels):
     fl_labels = ex.feature_lists.feature_list["labels"]
     for token, label in zip(sequence, labels):
         fl_tokens.feature.add().bytes_list.value.append(str.encode(token))
-        fl_labels.feature.add().bytes_list.value.append(str.encode(label))
+        fl_labels.feature.add().int64_list.value.append(label)
     return ex
 
 
@@ -53,13 +62,17 @@ class DatasetSplitter:
 
 
 class TokenIndexer:
-    def __init__(self, unk='unk'):
-        self.last_id = 0
+    def __init__(self, max_length=50, unk='<unk>', pad='<pad>'):
         self.ids = {}
         self.tokens = {}
-        self.ids[unk] = self.last_id
-        self.tokens[self.last_id] = unk
+        self.ids[pad] = 0
+        self.tokens[0] = pad
+        self.ids[unk] = 1
+        self.tokens[1] = unk
         self.unk = unk
+        self.pad = pad
+        self.last_id = 1
+        self.max_length = max_length
 
     def index(self, sentence, extract_func):
         tokens = extract_func(sentence)
@@ -75,13 +88,24 @@ class TokenIndexer:
                 self.ids[token] = self.last_id
                 self.tokens[self.last_id] = token
                 indexes.append(self.last_id)
+        indexes = self.pad_right(indexes, self.max_length, self.ids[self.pad])
         return indexes
 
     def get_ids(self, tokens):
-        return [self.ids.get(token, self.ids[self.unk]) for token in tokens]
+        indexes = [self.ids.get(token, self.ids[self.unk]) for token in tokens]
+        return self.pad_right(indexes, self.max_length, self.ids[self.pad])
 
     def get_tokens(self, ids):
-        return [self.tokens.get(tId, self.tokens[1]) for tId in ids]
+        indexes = [self.tokens.get(tId, self.tokens[1]) for tId in ids]
+        return self.pad_right(indexes, self.max_length, self.tokens[0])
+
+    def pad_right(self, aList, length, padding):
+        cList = list(aList)
+        l = len(aList)
+        while l < length:
+            cList.append(padding)
+            l += 1
+        return cList
 
 
 def write_vocab(vocab_iterator, fd):
@@ -101,30 +125,48 @@ def main(_):
     label_indexer = TokenIndexer(unk='O')
     test_splitter = DatasetSplitter(split_a=0.9, split_b=0.1)
     dev_splitter = DatasetSplitter(split_a=0.9, split_b=0.1)
+    train_data_count = 0
+    print_every = 2000
 
     with open(data_path) as file,\
-            open(tokens_output, 'w') as tokensFd,\
-            open(labels_output, 'w') as labelsFd,\
+            open(tokens_output, 'w') as tokens_fd,\
+            open(labels_output, 'w') as labels_fd,\
             tf.python_io.TFRecordWriter(train_output) as train_writer,\
             tf.python_io.TFRecordWriter(test_output) as test_writer,\
             tf.python_io.TFRecordWriter(dev_output) as dev_writer:
         for line in file:
-            split = test_splitter.allocate()
+            line = line.rstrip('\n')
             sequences = extract_tokens(line)
             labels = extract_labels(line)
-            example = make_example(sequences, labels)
-            out_string = example.SerializeToString()
-            if split == 'set_a':
+            if test_splitter.allocate() == 'set_a':
                 token_indexer.index_tokens(sequences)
-                label_indexer.index_tokens(labels)
+                sequences = token_indexer.pad_right(
+                    sequences,
+                    token_indexer.max_length,
+                    token_indexer.pad)
+                label_idx = label_indexer.index_tokens(labels)
+                example = make_example(sequences, label_idx)
+                out_string = example.SerializeToString()
                 train_writer.write(out_string)
                 if dev_splitter.allocate() == 'set_b':
                     dev_writer.write(out_string)
+                train_data_count += 1
+                if train_data_count % print_every == 0:
+                    print(' '.join(sequences))
+                    print(' '.join([str(x) for x in label_idx]))
+                    print('-------------------------')
             else:
+                label_idx = token_indexer.get_ids(labels)
+                sequences = token_indexer.pad_right(
+                    sequences,
+                    token_indexer.max_length,
+                    token_indexer.pad)
+                example = make_example(sequences, label_idx)
+                out_string = example.SerializeToString()
                 test_writer.write(out_string)
 
-        write_vocab(token_indexer.tokens.values(), tokensFd)
-        write_vocab(label_indexer.tokens.values(), labelsFd)
+        write_vocab(token_indexer.tokens.values(), tokens_fd)
+        write_vocab(label_indexer.tokens.values(), labels_fd)
         print('Done. {} train, {} test, {} dev'.format(
             test_splitter.allocation['set_a'],
             test_splitter.allocation['set_b'],
