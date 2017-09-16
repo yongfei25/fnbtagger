@@ -5,7 +5,9 @@ setup(name='fnbtagger',
       description='Tag food names',
       packages=['fnbtagger'],
       install_requires=[
-          'tensorflow-gpu'
+          'tensorflow-gpu',
+          'pep8',
+          'pylint'
       ],
       test_suite='nose.collector',
       tests_require=['nose'],
