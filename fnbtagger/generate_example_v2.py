@@ -62,7 +62,7 @@ class DatasetSplitter:
 
 
 class TokenIndexer:
-    def __init__(self, max_length=50, unk='<unk>', pad='<pad>'):
+    def __init__(self, max_length=51, unk='<unk>', pad='<pad>'):
         self.ids = {}
         self.tokens = {}
         self.ids[pad] = 0
@@ -136,6 +136,8 @@ def main(_):
             tf.python_io.TFRecordWriter(dev_output) as dev_writer:
         for line in file:
             line = line.rstrip('\n')
+            if line == '':
+                continue
             sequences = extract_tokens(line)
             labels = extract_labels(line)
             if test_splitter.allocate() == 'set_a':
