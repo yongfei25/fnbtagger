@@ -7,6 +7,8 @@ from tensorflow.python.estimator.estimator_lib import EstimatorSpec
 from tensorflow.python.estimator.estimator_lib import Estimator
 from tensorflow.contrib.learn.python.learn import Experiment
 
+# tf.logging.set_verbosity(tf.logging.INFO)
+
 
 def read_vocab_list(vocab_file_path):
     vocabs = []
@@ -73,7 +75,7 @@ def input_fn(data_path,
             min_after_dequeue=1000,
             capacity=5000,
             allow_smaller_final_batch=True,
-            shapes=[[51, embedding_size], [51], []]
+            shapes=[[sequence_length, embedding_size], [sequence_length], []]
         )
     features_batch = {
         'tokens': tokens_batch,
@@ -86,36 +88,45 @@ def model_fn(features, labels, mode, params):
     if mode != tf.estimator.ModeKeys.TRAIN:
         params['dropout_keep_propd'] = 1.0
 
-    cell = tf.nn.rnn_cell.GRUCell(params['hidden_units'])
-    cell = tf.nn.rnn_cell.DropoutWrapper(
-        cell,
-        output_keep_prob=params['dropout_keep_prob'])
-    rnn_cells = tf.nn.rnn_cell.MultiRNNCell([cell] * params['num_layers'])
-    output, _ = tf.nn.dynamic_rnn(
-        cell=rnn_cells,
-        inputs=features['tokens'],
-        sequence_length=features['length'],
-        dtype=tf.float32)
-    logits = tf.contrib.layers.fully_connected(output, params['num_classes'])
-    predictions = tf.argmax(logits, axis=-1)
-    # logits = tf.Print(logits, [
-    #     tf.shape(logits), tf.shape(labels), tf.shape(predictions)])
-    loss = None
-    train_op = None
-    eval_metrics_ops = {}
-    if mode != tf.estimator.ModeKeys.PREDICT:
+    with tf.name_scope('model'):
+        cell_fw = tf.nn.rnn_cell.GRUCell(params['hidden_units'])
+        cell_bw = tf.nn.rnn_cell.GRUCell(params['hidden_units'])
+        _output = tf.nn.bidirectional_dynamic_rnn(
+            cell_fw, cell_bw,
+            features['tokens'],
+            sequence_length=features['length'],
+            dtype=tf.float32)
+        ((output_fw, output_bw), _) = _output
+        output = tf.concat([output_fw, output_bw], axis=-1)
+        logits = tf.contrib.layers.fully_connected(
+            output,
+            params['num_classes'])
+
+    with tf.name_scope('loss'):
         cross_ent = tf.nn.sparse_softmax_cross_entropy_with_logits(
             logits=logits[:, :-1],
             labels=labels[:, 1:]
         )
-        loss = tf.reduce_sum(cross_ent)
+        mask = tf.sequence_mask(features['length'])
+        losses = tf.boolean_mask(cross_ent, mask)
+        loss = tf.reduce_mean(losses)
+        tf.summary.scalar('train loss', loss)
+
+    with tf.name_scope('train'):
         optimizer = tf.train.AdamOptimizer(
             learning_rate=params['learning_rate']
         )
         train_op = optimizer.minimize(
             loss=loss, global_step=tf.train.get_global_step()
         )
-        eval_metrics_ops = get_eval_metric_ops(labels, predictions)
+
+    with tf.name_scope('accuracy'):
+        predictions = tf.cast(tf.argmax(logits, axis=-1), tf.int64)
+        correct_preds = tf.equal(predictions, labels)
+        accuracy = tf.reduce_mean(tf.cast(correct_preds, tf.float32))
+        tf.summary.scalar('train accuracy', accuracy)
+
+    eval_metrics_ops = get_eval_metric_ops(labels, predictions)
     return EstimatorSpec(
         mode,
         train_op=train_op,
@@ -133,7 +144,7 @@ def get_eval_metric_ops(labels, predictions):
         Dict of metric results keyed by name.
     """
     return {
-        'Accuracy': tf.metrics.accuracy(
+        'accuracy': tf.metrics.accuracy(
             labels=labels,
             predictions=predictions,
             name='accuracy')
@@ -142,26 +153,39 @@ def get_eval_metric_ops(labels, predictions):
 
 def main(_):
     opt = {
-        'embedding_size': 30,
+        # Model options
+        'embedding_size': 20,
         'rnn_units': 30,
         'learning_rate': 0.01,
-        'batch_size': 4,
+        'batch_size': 32,
         'num_epochs': 10,
         'hidden_units': 30,
         'num_layers': 1,
         'dropout_keep_prob': 1.0,
-        'sequence_length': 51,
+        'sequence_length': 30,
+
+        # Experiment options
+        'save_summary_steps': 100,
+        'save_checkpoints_steps': 100,
+        'keep_checkpoint_max': 100,
+        'log_step_count_steps': 100
     }
     data_path = path.join(path.dirname(__file__), '../output')
-    checkpoint_path = path.join(path.dirname(__file__), '../checkpoints')
     model_dir = path.join(path.dirname(__file__), '../models')
+    pathlib.Path(model_dir).mkdir(parents=True, exist_ok=True)
+
     token_vocabs = read_vocab_list(path.join(data_path, 'tokens.vocab'))
     label_vocabs = read_vocab_list(path.join(data_path, 'labels.vocab'))
     opt['num_classes'] = len(label_vocabs)
-    pathlib.Path(model_dir).mkdir(parents=True, exist_ok=True)
-    pathlib.Path(checkpoint_path).mkdir(parents=True, exist_ok=True)
+
     run_config = tf.contrib.learn.RunConfig()
-    run_config = run_config.replace(model_dir=model_dir)
+    run_config = run_config.replace(
+        model_dir=model_dir,
+        save_summary_steps=opt['save_summary_steps'],
+        save_checkpoints_steps=opt['save_checkpoints_steps'],
+        keep_checkpoint_max=opt['keep_checkpoint_max'],
+        log_step_count_steps=opt['log_step_count_steps']
+    )
     estimator = Estimator(
         model_fn=model_fn,
         params=opt,
