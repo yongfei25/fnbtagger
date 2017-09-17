@@ -120,13 +120,14 @@ def main(_):
     dev_output = 'output/dev.tfrecords'
     tokens_output = 'output/tokens.vocab'
     labels_output = 'output/labels.vocab'
+    max_length = 30
     pathlib.Path('./output').mkdir(parents=True, exist_ok=True)
-    token_indexer = TokenIndexer(unk='unk')
-    label_indexer = TokenIndexer(unk='O')
-    test_splitter = DatasetSplitter(split_a=0.9, split_b=0.1)
+    token_indexer = TokenIndexer(unk='unk', max_length=max_length)
+    label_indexer = TokenIndexer(unk='O', max_length=max_length)
+    test_splitter = DatasetSplitter(split_a=0.8, split_b=0.2)
     dev_splitter = DatasetSplitter(split_a=0.9, split_b=0.1)
     train_data_count = 0
-    print_every = 2000
+    print_every = 1000
 
     with open(data_path) as file,\
             open(tokens_output, 'w') as tokens_fd,\
@@ -140,8 +141,9 @@ def main(_):
                 continue
             sequences = extract_tokens(line)
             labels = extract_labels(line)
+            if len(sequences) > max_length:
+                continue
             if test_splitter.allocate() == 'set_a':
-                token_indexer.index_tokens(sequences)
                 sequences = token_indexer.pad_right(
                     sequences,
                     token_indexer.max_length,
@@ -158,7 +160,7 @@ def main(_):
                     print(' '.join([str(x) for x in label_idx]))
                     print('-------------------------')
             else:
-                label_idx = token_indexer.get_ids(labels)
+                label_idx = label_indexer.get_ids(labels)
                 sequences = token_indexer.pad_right(
                     sequences,
                     token_indexer.max_length,
