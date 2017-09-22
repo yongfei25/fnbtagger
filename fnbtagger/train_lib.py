@@ -85,16 +85,33 @@ def input_fn(data_path,
 
 
 def model_fn(features, labels, mode, params):
+    if params['crf']:
+        raise ValueError('CRF model is not supported yet.')
+    if params['num_layers'] < 1:
+        raise ValueError('num_layers must be greater than or equal one.')
     if mode != tf.estimator.ModeKeys.TRAIN:
-        params['dropout_keep_propd'] = 1.0
+        params['dropout_keep_prob'] = 1.0
 
+    sequence_length = tf.cast(features['length'], tf.int32)
+    labels = tf.cast(labels, tf.int32)
+    inputs = tf.nn.dropout(features['tokens'], params['dropout_keep_prob'])
     with tf.name_scope('model'):
-        cell_fw = tf.nn.rnn_cell.GRUCell(params['hidden_units'])
-        cell_bw = tf.nn.rnn_cell.GRUCell(params['hidden_units'])
+        cells_fw = []
+        cells_bw = []
+        for _ in range(params['num_layers']):
+            cells_fw.append(tf.nn.rnn_cell.DropoutWrapper(
+                cell=tf.nn.rnn_cell.GRUCell(params['hidden_units']),
+                output_keep_prob=params['dropout_keep_prob']
+            ))
+            cells_bw.append(tf.nn.rnn_cell.DropoutWrapper(
+                cell=tf.nn.rnn_cell.GRUCell(params['hidden_units']),
+                output_keep_prob=params['dropout_keep_prob']
+            ))
         _output = tf.nn.bidirectional_dynamic_rnn(
-            cell_fw, cell_bw,
-            features['tokens'],
-            sequence_length=features['length'],
+            cell_fw=tf.nn.rnn_cell.MultiRNNCell(cells_fw),
+            cell_bw=tf.nn.rnn_cell.MultiRNNCell(cells_bw),
+            inputs=inputs,
+            sequence_length=sequence_length,
             dtype=tf.float32)
         ((output_fw, output_bw), _) = _output
         output = tf.concat([output_fw, output_bw], axis=-1)
@@ -103,14 +120,23 @@ def model_fn(features, labels, mode, params):
             params['num_classes'])
 
     with tf.name_scope('loss'):
-        cross_ent = tf.nn.sparse_softmax_cross_entropy_with_logits(
-            logits=logits[:, :-1],
-            labels=labels[:, 1:]
-        )
-        mask = tf.sequence_mask(features['length'])
-        losses = tf.boolean_mask(cross_ent, mask)
-        loss = tf.reduce_mean(losses)
-        tf.summary.scalar('train loss', loss)
+        # transition_params = None
+        loss = None
+        if params['crf']:
+            crf_loglikelihod = tf.contrib.crf.crf_log_likelihood(
+                logits, labels, sequence_length)
+            transition_params = crf_loglikelihod[1]
+            loss = tf.reduce_mean(-crf_loglikelihod[0])
+        else:
+            cross_ent = tf.nn.sparse_softmax_cross_entropy_with_logits(
+                logits=logits,
+                labels=labels
+            )
+            mask = tf.sequence_mask(sequence_length)
+            losses = tf.boolean_mask(cross_ent, mask)
+            loss = tf.reduce_mean(losses)
+        if mode == tf.estimator.ModeKeys.TRAIN:
+            tf.summary.scalar('train_loss', loss)
 
     with tf.name_scope('train'):
         optimizer = tf.train.AdamOptimizer(
@@ -121,12 +147,22 @@ def model_fn(features, labels, mode, params):
         )
 
     with tf.name_scope('accuracy'):
-        predictions = tf.cast(tf.argmax(logits, axis=-1), tf.int64)
-        correct_preds = tf.equal(predictions, labels)
-        accuracy = tf.reduce_mean(tf.cast(correct_preds, tf.float32))
-        tf.summary.scalar('train accuracy', accuracy)
+        predictions = tf.cast(tf.argmax(logits, axis=-1), tf.int32)
+        # predictions = tf.Print(predictions, [logits, tf.shape(predictions), tf.shape(labels)])
+        # predictions = tf.Print(predictions, [predictions, labels], summarize=10)
+        # NOTE: accuracy don't work well in this case,
+        # Better option would be F1 score.
+        if mode == tf.estimator.ModeKeys.TRAIN:
+            correct_preds = tf.equal(predictions, labels)
+            accuracy = tf.reduce_mean(tf.cast(correct_preds, tf.float32))
+            tf.summary.scalar('train_accuracy', accuracy)
 
-    eval_metrics_ops = get_eval_metric_ops(labels, predictions)
+    eval_metrics_ops = {
+        'accuracy': tf.metrics.accuracy(
+            labels=labels,
+            predictions=predictions,
+            name='accuracy')
+    }
     return EstimatorSpec(
         mode,
         train_op=train_op,
@@ -135,47 +171,38 @@ def model_fn(features, labels, mode, params):
         eval_metric_ops=eval_metrics_ops)
 
 
-def get_eval_metric_ops(labels, predictions):
-    """Return a dict of the evaluation Ops.
-    Args:
-        labels (Tensor): Labels tensor for training and evaluation.
-        predictions (Tensor): Predictions Tensor.
-    Returns:
-        Dict of metric results keyed by name.
-    """
-    return {
-        'accuracy': tf.metrics.accuracy(
-            labels=labels,
-            predictions=predictions,
-            name='accuracy')
-    }
-
-
-def main(_):
+def create_experiment(user_opt={}):
     opt = {
         # Model options
-        'embedding_size': 20,
-        'rnn_units': 30,
-        'learning_rate': 0.01,
-        'batch_size': 32,
-        'num_epochs': 10,
-        'hidden_units': 30,
-        'num_layers': 1,
+        'embedding_size': 120,
+        'hidden_units': 120,
+        'learning_rate': 0.005,
+        'batch_size': 256,
+        'num_epochs': 50,
         'dropout_keep_prob': 1.0,
         'sequence_length': 30,
+        'num_layers': 1,
+        'random_seed': 1234,
+        'crf': False,
 
         # Experiment options
-        'save_summary_steps': 100,
-        'save_checkpoints_steps': 100,
-        'keep_checkpoint_max': 100,
-        'log_step_count_steps': 100
+        'save_summary_steps': 200,
+        'save_checkpoints_steps': 500,
+        'keep_checkpoint_max': 1,
+        'log_step_count_steps': 100,
+
+        # Paths
+        'model_dir': path.join(path.dirname(__file__), '../models/default'),
+        'data_dir': path.join(path.dirname(__file__), '../output'),
+        'train_file': 'train.tfrecord'
     }
-    data_path = path.join(path.dirname(__file__), '../output')
-    model_dir = path.join(path.dirname(__file__), '../models')
+    opt.update(user_opt)
+    data_dir = opt['data_dir']
+    model_dir = opt['model_dir']
     pathlib.Path(model_dir).mkdir(parents=True, exist_ok=True)
 
-    token_vocabs = read_vocab_list(path.join(data_path, 'tokens.vocab'))
-    label_vocabs = read_vocab_list(path.join(data_path, 'labels.vocab'))
+    token_vocabs = read_vocab_list(path.join(data_dir, 'tokens.vocab'))
+    label_vocabs = read_vocab_list(path.join(data_dir, 'labels.vocab'))
     opt['num_classes'] = len(label_vocabs)
 
     run_config = tf.contrib.learn.RunConfig()
@@ -184,7 +211,8 @@ def main(_):
         save_summary_steps=opt['save_summary_steps'],
         save_checkpoints_steps=opt['save_checkpoints_steps'],
         keep_checkpoint_max=opt['keep_checkpoint_max'],
-        log_step_count_steps=opt['log_step_count_steps']
+        log_step_count_steps=opt['log_step_count_steps'],
+        tf_random_seed=opt['random_seed']
     )
     estimator = Estimator(
         model_fn=model_fn,
@@ -194,8 +222,8 @@ def main(_):
     experiment = Experiment(
         estimator=estimator,
         train_input_fn=lambda: input_fn(
-            data_path=data_path,
-            filename='dev.tfrecords',
+            data_path=data_dir,
+            filename=opt['train_file'],
             batch_size=opt['batch_size'],
             num_epochs=opt['num_epochs'],
             vocab_list=token_vocabs,
@@ -203,8 +231,8 @@ def main(_):
             sequence_length=opt['sequence_length']
         ),
         eval_input_fn=lambda: input_fn(
-            data_path=data_path,
-            filename='test.tfrecords',
+            data_path=data_dir,
+            filename='test.tfrecord',
             batch_size=1,
             num_epochs=1,
             vocab_list=token_vocabs,
@@ -212,8 +240,13 @@ def main(_):
             sequence_length=opt['sequence_length']
         )
     )
-    experiment.train_and_evaluate()
+    return experiment
 
 
-if __name__ == '__main__':
-    main(sys.argv)
+def get_model_path(opt):
+    keys = [
+        'embedding_size', 'hidden_units', 'learning_rate',
+        'dropout_keep_prob', 'num_epochs', 'num_layers'
+    ]
+    mPath = '-'.join(['{}={}'.format(x, opt[x]) for x in keys])
+    return mPath

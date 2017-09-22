@@ -10,8 +10,6 @@ def extract_tokens(sentence):
 def extract_labels(sentence):
     return [x.split('/').pop().upper() for x in sentence.split(' ')]
 
-# TODO: A function for max-length and padding
-
 
 def make_example(sequence, labels):
     if len(sequence) != len(labels):
@@ -36,11 +34,11 @@ def make_example(sequence, labels):
 
 
 class DatasetSplitter:
-    def __init__(self, split_a=0.9, split_b=0.1):
-        if split_a + split_b != 1:
-            raise ValueError('The split must sum up to 1')
-        self.split_a = split_a
-        self.split_b = split_b
+    def __init__(self, split=0.9):
+        if split <= 0 or split >= 1:
+            raise ValueError('The split must beween 0 and 1')
+        self.split_a = split
+        self.split_b = 1 - split
         self.allocation = {
             'set_a': 0,
             'set_b': 0,
@@ -115,18 +113,18 @@ def write_vocab(vocab_iterator, fd):
 
 def main(_):
     data_path = './data/annotations.txt'
-    train_output = 'output/train.tfrecords'
-    test_output = 'output/test.tfrecords'
-    dev_output = 'output/dev.tfrecords'
+    train_output = 'output/train.tfrecord'
+    test_output = 'output/test.tfrecord'
+    dev_output = 'output/dev.tfrecord'
+    tiny_output = 'output/tiny.tfrecord'
     tokens_output = 'output/tokens.vocab'
     labels_output = 'output/labels.vocab'
     max_length = 30
     pathlib.Path('./output').mkdir(parents=True, exist_ok=True)
     token_indexer = TokenIndexer(unk='unk', max_length=max_length)
     label_indexer = TokenIndexer(unk='O', max_length=max_length)
-    test_splitter = DatasetSplitter(split_a=0.8, split_b=0.2)
-    dev_splitter = DatasetSplitter(split_a=0.9, split_b=0.1)
-    train_data_count = 0
+    test_splitter = DatasetSplitter(split=0.9)
+    dev_splitter = DatasetSplitter(split=0.8)
     print_every = 1000
 
     with open(data_path) as file,\
@@ -134,6 +132,7 @@ def main(_):
             open(labels_output, 'w') as labels_fd,\
             tf.python_io.TFRecordWriter(train_output) as train_writer,\
             tf.python_io.TFRecordWriter(test_output) as test_writer,\
+            tf.python_io.TFRecordWriter(tiny_output) as tiny_writer,\
             tf.python_io.TFRecordWriter(dev_output) as dev_writer:
         for line in file:
             line = line.rstrip('\n')
@@ -144,6 +143,8 @@ def main(_):
             if len(sequences) > max_length:
                 continue
             if test_splitter.allocate() == 'set_a':
+                # index the tokens so that we can build the vocab
+                token_indexer.index_tokens(sequences)
                 sequences = token_indexer.pad_right(
                     sequences,
                     token_indexer.max_length,
@@ -154,8 +155,9 @@ def main(_):
                 train_writer.write(out_string)
                 if dev_splitter.allocate() == 'set_b':
                     dev_writer.write(out_string)
-                train_data_count += 1
-                if train_data_count % print_every == 0:
+                if test_splitter.allocation['set_a'] <= 20:
+                    tiny_writer.write(out_string)
+                if test_splitter.allocation['set_a'] % print_every == 0:
                     print(' '.join(sequences))
                     print(' '.join([str(x) for x in label_idx]))
                     print('-------------------------')
