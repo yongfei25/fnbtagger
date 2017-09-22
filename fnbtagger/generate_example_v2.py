@@ -28,7 +28,7 @@ def make_example(sequence, labels):
     fl_tokens = ex.feature_lists.feature_list["tokens"]
     fl_labels = ex.feature_lists.feature_list["labels"]
     for token, label in zip(sequence, labels):
-        fl_tokens.feature.add().bytes_list.value.append(str.encode(token))
+        fl_tokens.feature.add().int64_list.value.append(token)
         fl_labels.feature.add().int64_list.value.append(label)
     return ex
 
@@ -134,6 +134,7 @@ def main(_):
             tf.python_io.TFRecordWriter(test_output) as test_writer,\
             tf.python_io.TFRecordWriter(tiny_output) as tiny_writer,\
             tf.python_io.TFRecordWriter(dev_output) as dev_writer:
+        test_examples = []
         for line in file:
             line = line.rstrip('\n')
             if line == '':
@@ -144,13 +145,9 @@ def main(_):
                 continue
             if test_splitter.allocate() == 'set_a':
                 # index the tokens so that we can build the vocab
-                token_indexer.index_tokens(sequences)
-                sequences = token_indexer.pad_right(
-                    sequences,
-                    token_indexer.max_length,
-                    token_indexer.pad)
+                sequences_idx = token_indexer.index_tokens(sequences)
                 label_idx = label_indexer.index_tokens(labels)
-                example = make_example(sequences, label_idx)
+                example = make_example(sequences_idx, label_idx)
                 out_string = example.SerializeToString()
                 train_writer.write(out_string)
                 if dev_splitter.allocate() == 'set_b':
@@ -162,14 +159,16 @@ def main(_):
                     print(' '.join([str(x) for x in label_idx]))
                     print('-------------------------')
             else:
-                label_idx = label_indexer.get_ids(labels)
-                sequences = token_indexer.pad_right(
-                    sequences,
-                    token_indexer.max_length,
-                    token_indexer.pad)
-                example = make_example(sequences, label_idx)
-                out_string = example.SerializeToString()
-                test_writer.write(out_string)
+                # Add test examples to write after we indexed all
+                # the train examples
+                test_examples.append((sequences, labels))
+
+        for sequences, labels in test_examples:
+            label_idx = label_indexer.get_ids(labels)
+            sequences_idx = token_indexer.get_ids(sequences)
+            example = make_example(sequences_idx, label_idx)
+            out_string = example.SerializeToString()
+            test_writer.write(out_string)
 
         write_vocab(token_indexer.tokens.values(), tokens_fd)
         write_vocab(label_indexer.tokens.values(), labels_fd)
