@@ -11,4 +11,5 @@
 .vscode/.ropeproject
 output
 models-*
+exports
 fnbtagger/tune

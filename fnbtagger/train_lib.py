@@ -86,7 +86,6 @@ def create_model_fn(vocab_list, class_list):
             )
             inputs = tf.nn.embedding_lookup(embeddings, features['tokens'])
             sequence_length = tf.cast(features['length'], tf.int32)
-            labels = tf.cast(labels, tf.int32)
 
         with tf.variable_scope('model'):
             cells_fw = []
@@ -108,58 +107,67 @@ def create_model_fn(vocab_list, class_list):
                 dtype=tf.float32)
             ((output_fw, output_bw), _) = _output
             output = tf.concat([output_fw, output_bw], axis=-1)
+            num_classes = len(class_list)
             logits = tf.contrib.layers.fully_connected(
                 output,
-                params['num_classes'])
-
-        with tf.variable_scope('loss'):
-            cross_ent = tf.nn.sparse_softmax_cross_entropy_with_logits(
-                logits=logits,
-                labels=labels
-            )
-            mask = tf.sequence_mask(sequence_length)
-            losses = tf.boolean_mask(cross_ent, mask)
-            loss = tf.reduce_mean(losses)
-
-            if mode == tf.estimator.ModeKeys.TRAIN:
-                tf.summary.scalar('train_loss', loss)
-
-        with tf.variable_scope('train'):
-            optimizer = tf.train.AdamOptimizer(
-                learning_rate=params['learning_rate']
-            )
-            train_op = optimizer.minimize(
-                loss=loss, global_step=tf.train.get_global_step()
-            )
-
-        with tf.variable_scope('accuracy'):
+                num_classes)
             predictions = tf.cast(tf.argmax(logits, axis=-1), tf.int32)
-            # NOTE: accuracy don't work well in this case,
-            # Better option would be F1 score.
-            if mode == tf.estimator.ModeKeys.TRAIN:
-                correct_preds = tf.equal(predictions, labels)
-                accuracy = tf.reduce_mean(tf.cast(correct_preds, tf.float32))
-                tf.summary.scalar('train_accuracy', accuracy)
 
-        eval_metrics_ops = {
-            'accuracy': tf.metrics.accuracy(
-                labels=labels,
+        if mode == tf.estimator.ModeKeys.PREDICT:
+            export_outputs = {
+                'classification': tf.estimator.export.ClassificationOutput(
+                    scores=logits,
+                    classes=tf.convert_to_tensor(class_list, tf.string)
+                )
+            }
+            return EstimatorSpec(
+                mode,
                 predictions=predictions,
-                name='accuracy')
-        }
-        export_outputs = {
-            'classify': tf.estimator.export.ClassificationOutput(
-                scores=logits,
-                classes=tf.convert_to_tensor(class_list, tf.string)
-            )
-        }
-        return EstimatorSpec(
-            mode,
-            train_op=train_op,
-            predictions=predictions,
-            loss=loss,
-            export_outputs=export_outputs,
-            eval_metric_ops=eval_metrics_ops)
+                export_outputs=export_outputs)
+        else:
+            labels = tf.cast(labels, tf.int32)
+            with tf.variable_scope('loss'):
+                cross_ent = tf.nn.sparse_softmax_cross_entropy_with_logits(
+                    logits=logits,
+                    labels=labels
+                )
+                mask = tf.sequence_mask(sequence_length)
+                losses = tf.boolean_mask(cross_ent, mask)
+                loss = tf.reduce_mean(losses)
+
+                if mode == tf.estimator.ModeKeys.TRAIN:
+                    tf.summary.scalar('train_loss', loss)
+
+            with tf.variable_scope('train'):
+                optimizer = tf.train.AdamOptimizer(
+                    learning_rate=params['learning_rate']
+                )
+                train_op = optimizer.minimize(
+                    loss=loss, global_step=tf.train.get_global_step()
+                )
+
+            with tf.variable_scope('accuracy'):
+                # NOTE: accuracy don't work well in this case,
+                # Better option would be F1 score.
+                if mode == tf.estimator.ModeKeys.TRAIN:
+                    correct_preds = tf.equal(predictions, labels)
+                    accuracy = tf.reduce_mean(
+                        tf.cast(correct_preds, tf.float32))
+                    tf.summary.scalar('train_accuracy', accuracy)
+
+            eval_metrics_ops = {
+                'accuracy': tf.metrics.accuracy(
+                    labels=labels,
+                    predictions=predictions,
+                    name='accuracy')
+            }
+            
+            return EstimatorSpec(
+                mode,
+                train_op=train_op,
+                predictions=predictions,
+                loss=loss,
+                eval_metric_ops=eval_metrics_ops)
 
     return model_fn
 
@@ -196,7 +204,6 @@ def create_experiment(user_opt={}):
 
     token_vocabs = read_vocab_list(path.join(data_dir, 'tokens.vocab'))
     label_vocabs = read_vocab_list(path.join(data_dir, 'labels.vocab'))
-    opt['num_classes'] = len(label_vocabs)
 
     run_config = tf.contrib.learn.RunConfig()
     run_config = run_config.replace(
