@@ -21,26 +21,20 @@ def main(_):
     sequence_length = 30
 
     def serving_input_receiver_fn():
-        serialized_tf_example = array_ops.placeholder(
-            dtype=tf.string,
-            name='input_sequence')
-        receiver_tensors = {'input_sequence': serialized_tf_example}
-        context_features = {
-            'length': tf.FixedLenFeature([1], tf.int64)
+        receiver_tensors = {
+            'tokens': array_ops.placeholder(
+                dtype=tf.int64,
+                shape=[None, sequence_length],
+                name='tokens'
+            ),
+            'length': array_ops.placeholder(
+                dtype=tf.int64,
+                shape=[None],
+                name='length'
+            )
         }
-        sequence_features = {
-            'tokens': tf.FixedLenSequenceFeature([sequence_length], tf.int64)
-        }
-        context, sequence = tf.parse_single_sequence_example(
-            serialized_tf_example,
-            context_features=context_features,
-            sequence_features=sequence_features
-        )
-        features = {
-            'tokens': sequence['tokens'],
-            'length': context['length']
-        }
-        return export_lib.ServingInputReceiver(features, receiver_tensors)
+        return export_lib.ServingInputReceiver(
+            receiver_tensors, receiver_tensors)
 
     params = {
         'embedding_size': 50,

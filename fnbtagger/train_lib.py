@@ -116,10 +116,9 @@ def create_model_fn(vocab_list, class_list):
 
         if mode == tf.estimator.ModeKeys.PREDICT:
             export_outputs = {
-                'classification': tf.estimator.export.ClassificationOutput(
-                    scores=logits,
-                    classes=tf.convert_to_tensor(class_list, tf.string)
-                )
+                'predict': tf.estimator.export.PredictOutput({
+                    'predictions': predictions
+                })
             }
             return EstimatorSpec(
                 mode,
