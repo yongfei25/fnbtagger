@@ -84,7 +84,8 @@ def create_model_fn(vocab_list, class_list):
                     stddev=1.0/len(vocab_list)
                 )
             )
-            inputs = tf.nn.embedding_lookup(embeddings, features['tokens'])
+            input_embeddings = tf.nn.embedding_lookup(embeddings, features['tokens'])
+            inputs = tf.nn.dropout(input_embeddings, params['dropout_keep_prob'])
             sequence_length = tf.cast(features['length'], tf.int32)
 
         with tf.variable_scope('model'):

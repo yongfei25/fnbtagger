@@ -11,8 +11,8 @@ def main(_):
     opt = {
         'data_dir': data_dir,
         'model_dir': model_dir,
-        'embedding_size': 120,
-        'hidden_units': 300,
+        'embedding_size': 100,
+        'hidden_units': 100,
         'learning_rate': 0.001,
         'save_summary_steps': 1,
         'dropout_keep_prob': 1.0,

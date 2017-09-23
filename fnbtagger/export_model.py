@@ -5,13 +5,16 @@ import tensorflow as tf
 from tensorflow.python.ops import array_ops
 from tensorflow.python.estimator.estimator import Estimator
 from tensorflow.python.estimator.export import export as export_lib
-from fnbtagger.train_lib import create_model_fn, read_vocab_list
+from fnbtagger.train_lib import (
+    create_model_fn,
+    read_vocab_list,
+    get_model_path
+)
 
 
 def main(_):
-    model_dir = 'models-dev'
     data_dir = path.join(path.dirname(__file__), '../output')
-    base_dir = path.join(path.dirname(__file__), '../exports/dev')
+    base_dir = path.join(path.dirname(__file__), '../exports/main')
     pathlib.Path(base_dir).mkdir(parents=True, exist_ok=True)
     token_vocabs = read_vocab_list(path.join(data_dir, 'tokens.vocab'))
     label_vocabs = read_vocab_list(path.join(data_dir, 'labels.vocab'))
@@ -40,12 +43,14 @@ def main(_):
         return export_lib.ServingInputReceiver(features, receiver_tensors)
 
     params = {
-        'embedding_size': 100,
-        'hidden_units': 100,
-        'learning_rate': 0.001,
-        'dropout_keep_prob': 1.0,
-        'num_layers': 1
+        'embedding_size': 50,
+        'hidden_units': 50,
+        'learning_rate': 0.0005,
+        'dropout_keep_prob': 0.5,
+        'num_layers': 1,
+        'num_epochs': 200,
     }
+    model_dir = path.join('models-2', get_model_path(params))
     estimator = Estimator(
         model_fn=create_model_fn(
             vocab_list=token_vocabs,
