@@ -124,7 +124,7 @@ def main(_):
     token_indexer = TokenIndexer(unk='unk', max_length=max_length)
     label_indexer = TokenIndexer(unk='O', max_length=max_length)
     test_splitter = DatasetSplitter(split=0.9)
-    dev_splitter = DatasetSplitter(split=0.8)
+    dev_splitter = DatasetSplitter(split=0.9)
     print_every = 1000
 
     with open(data_path) as file,\
