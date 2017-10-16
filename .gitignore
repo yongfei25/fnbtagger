@@ -13,3 +13,4 @@ output
 models-*
 exports
 fnbtagger/tune
+data
