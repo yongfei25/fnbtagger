@@ -37,14 +37,14 @@ def main(_):
             receiver_tensors, receiver_tensors)
 
     params = {
-        'embedding_size': 50,
-        'hidden_units': 50,
-        'learning_rate': 0.0005,
-        'dropout_keep_prob': 0.5,
+        'embedding_size': 68,
+        'hidden_units': 64,
+        'learning_rate': 0.00061,
+        'dropout_keep_prob': 0.31,
         'num_layers': 1,
-        'num_epochs': 200,
+        'num_epochs': 60,
     }
-    model_dir = path.join('models-2', get_model_path(params))
+    model_dir = path.join('models-5', get_model_path(params))
     estimator = Estimator(
         model_fn=create_model_fn(
             vocab_list=token_vocabs,

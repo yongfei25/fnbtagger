@@ -7,8 +7,6 @@ from tensorflow.python.estimator.estimator_lib import EstimatorSpec
 from tensorflow.python.estimator.estimator_lib import Estimator
 from tensorflow.contrib.learn.python.learn import Experiment
 
-# tf.logging.set_verbosity(tf.logging.INFO)
-
 
 def read_vocab_list(vocab_file_path):
     vocabs = []
@@ -93,11 +91,11 @@ def create_model_fn(vocab_list, class_list):
             cells_bw = []
             for _ in range(params['num_layers']):
                 cells_fw.append(tf.nn.rnn_cell.DropoutWrapper(
-                    cell=tf.nn.rnn_cell.GRUCell(params['hidden_units']),
+                    cell=tf.nn.rnn_cell.LSTMCell(params['hidden_units']),
                     output_keep_prob=params['dropout_keep_prob']
                 ))
                 cells_bw.append(tf.nn.rnn_cell.DropoutWrapper(
-                    cell=tf.nn.rnn_cell.GRUCell(params['hidden_units']),
+                    cell=tf.nn.rnn_cell.LSTMCell(params['hidden_units']),
                     output_keep_prob=params['dropout_keep_prob']
                 ))
             _output = tf.nn.bidirectional_dynamic_rnn(
@@ -161,7 +159,7 @@ def create_model_fn(vocab_list, class_list):
                     predictions=predictions,
                     name='accuracy')
             }
-            
+
             return EstimatorSpec(
                 mode,
                 train_op=train_op,
