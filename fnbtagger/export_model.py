@@ -1,4 +1,4 @@
-import sys
+import argparse
 import pathlib
 from os import path
 import tensorflow as tf
@@ -12,9 +12,13 @@ from fnbtagger.train_lib import (
 )
 
 
-def main(_):
-    data_dir = path.join(path.dirname(__file__), '../output')
-    base_dir = path.join(path.dirname(__file__), '../exports/main')
+def main(lang, step):
+    data_dir = path.join(path.dirname(__file__),
+                         '../output/{}'.format(lang))
+    base_dir = path.join(path.dirname(__file__),
+                         '../exports/{}/main'.format(lang))
+    model_dir = path.join(path.dirname(__file__),
+                          '../models/{}'.format(lang))
     pathlib.Path(base_dir).mkdir(parents=True, exist_ok=True)
     token_vocabs = read_vocab_list(path.join(data_dir, 'tokens.vocab'))
     label_vocabs = read_vocab_list(path.join(data_dir, 'labels.vocab'))
@@ -37,14 +41,14 @@ def main(_):
             receiver_tensors, receiver_tensors)
 
     params = {
-        'embedding_size': 68,
-        'hidden_units': 64,
-        'learning_rate': 0.00061,
-        'dropout_keep_prob': 0.31,
+        'embedding_size': 38,
+        'hidden_units': 119,
+        'learning_rate': 0.00119,
+        'dropout_keep_prob': 0.29,
         'num_layers': 1,
-        'num_epochs': 60,
+        'num_epochs': 70,
     }
-    model_dir = path.join('models-5', get_model_path(params))
+    model_dir = path.join(model_dir, step, get_model_path(params))
     estimator = Estimator(
         model_fn=create_model_fn(
             vocab_list=token_vocabs,
@@ -64,4 +68,8 @@ def main(_):
 
 
 if __name__ == '__main__':
-    main(sys.argv)
+    parser = argparse.ArgumentParser(description='Export model')
+    parser.add_argument('language', choices=['en', 'zh'])
+    parser.add_argument('step', help='step name')
+    args = parser.parse_args()
+    main(args.language, args.step)
