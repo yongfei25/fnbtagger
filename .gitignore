@@ -12,6 +12,7 @@
 output
 models
 exports
-fnbtagger/tune
+fnbtagger/tune/*
+!fnbtagger/tune/step_1.py
 data/*
 !data/sample
